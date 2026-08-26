@@ -1,44 +1,130 @@
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{FromRow, Row};
 
 use crate::{auth::Claims, AppState};
 
 // --- Data Models ---
 
 #[derive(Deserialize)]
-pub struct OrderItemRequest {
-    pub product_id: i32,
-    pub quantity: i32,
-}
+pub struct OrderItemRequest { pub product_id: i32, pub quantity: i32 }
 
 #[derive(Deserialize)]
-pub struct CreateOrderRequest {
-    pub customer_id: i32,
-    pub items: Vec<OrderItemRequest>,
-}
+pub struct CreateOrderRequest { pub customer_id: i32, pub items: Vec<OrderItemRequest> }
 
 #[derive(Serialize)]
-pub struct OrderResponse {
-    pub order_id: i32,
+pub struct OrderResponse { pub order_id: i32, pub total_amount: Decimal, pub status: String, pub message: String }
+
+#[derive(Serialize)]
+pub struct OrderDetail {
+    pub id: i32,
+    pub customer_name: String,
     pub total_amount: Decimal,
     pub status: String,
-    pub message: String,
+    pub created_at: Option<DateTime<Utc>>,
+    pub items: Vec<OrderLineDetail>,
+}
+
+#[derive(Serialize, FromRow)]
+pub struct OrderLineDetail {
+    pub product_name: String,
+    pub sku: String,
+    pub quantity: i32,
+    pub unit_price: Decimal,
+}
+
+#[derive(Serialize, FromRow)]
+pub struct OrderSummary {
+    pub id: i32,
+    pub customer_name: String,
+    pub total_amount: Decimal,
+    pub status: String,
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 // --- Router Setup ---
 
 pub fn sales_routes() -> Router<AppState> {
-    Router::new().route("/", post(create_sales_order))
+    Router::new()
+        .route("/", get(list_orders))        // NEW: Fetch all orders
+        .route("/", post(create_sales_order))
+        .route("/:id", get(get_order_detail)) // NEW: Fetch single order for PDF
 }
 
 // --- Route Handlers ---
+
+async fn list_orders(
+    claims: Claims,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<OrderSummary>>, (StatusCode, String)> {
+    if claims.role != "admin" && !claims.role.contains("sales") {
+        return Err((StatusCode::FORBIDDEN, "Access Denied".to_string()));
+    }
+
+    let orders = sqlx::query_as::<_, OrderSummary>(
+        r#"
+        SELECT o.id, c.name as customer_name, o.total_amount, o.status, o.created_at
+        FROM sales_orders o
+        JOIN customers c ON o.customer_id = c.id
+        ORDER BY o.id DESC
+        "#
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)))?;
+
+    Ok(Json(orders))
+}
+
+async fn get_order_detail(
+    claims: Claims,
+    Path(id): Path<i32>,
+    State(state): State<AppState>,
+) -> Result<Json<OrderDetail>, (StatusCode, String)> {
+    if claims.role != "admin" && !claims.role.contains("sales") {
+        return Err((StatusCode::FORBIDDEN, "Access Denied".to_string()));
+    }
+
+    // 1. Get the parent order
+    let order_summary = sqlx::query_as::<_, OrderSummary>(
+        "SELECT o.id, c.name as customer_name, o.total_amount, o.status, o.created_at FROM sales_orders o JOIN customers c ON o.customer_id = c.id WHERE o.id = $1"
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)))?
+    .ok_or((StatusCode::NOT_FOUND, "Order not found".to_string()))?;
+
+    // 2. Get the line items
+    let items = sqlx::query_as::<_, OrderLineDetail>(
+        r#"
+        SELECT p.name as product_name, p.sku, i.quantity, i.unit_price
+        FROM sales_order_items i
+        JOIN products p ON i.product_id = p.id
+        WHERE i.order_id = $1
+        "#
+    )
+    .bind(id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)))?;
+
+    Ok(Json(OrderDetail {
+        id: order_summary.id,
+        customer_name: order_summary.customer_name,
+        total_amount: order_summary.total_amount,
+        status: order_summary.status,
+        created_at: order_summary.created_at,
+        items,
+    }))
+}
 
 async fn create_sales_order(
     claims: Claims,
