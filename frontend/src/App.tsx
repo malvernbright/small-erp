@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Crm from './pages/Crm';
 import Users from './pages/Users';
 import Inventory from './pages/Inventory';
+import Sales from './pages/Sales';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -39,9 +40,9 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Home /> }, 
       { path: "inventory", element: <Inventory /> },
-      { path: "crm", element: <Crm /> },       // <-- Add CRM route
-      { path: "users", element: <Users /> },   // <-- Add Users route
-      { path: "sales", element: <div>Sales coming soon...</div> },
+      { path: "crm", element: <Crm /> },
+      { path: "users", element: <Users /> },
+      { path: "sales", element: <Sales /> },
     ]
   },
 ]);
