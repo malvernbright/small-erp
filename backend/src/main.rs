@@ -15,6 +15,7 @@ mod auth;
 mod inventory;
 mod crm;
 mod sales;
+mod users;
 
 // Make the fields public so auth.rs can access the db pool
 #[derive(Clone)]
@@ -54,6 +55,7 @@ async fn main() {
         .nest("/api/inventory", inventory::inventory_routes())
         .nest("/api/crm", crm::crm_routes())
         .nest("/api/sales", sales::sales_routes())
+        .nest("/api/users", users::users_routes())
         .layer(cors)
         .with_state(state);
 

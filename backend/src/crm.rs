@@ -46,7 +46,7 @@ async fn list_customers(
 ) -> Result<Json<Vec<Customer>>, (StatusCode, String)> {
     
     // RBAC: Only admins and sales reps need to access customer data
-    if claims.role != "admin" && claims.role != "sales_rep" {
+    if claims.role != "admin" && !claims.role.contains("crm") {
         return Err((
             StatusCode::FORBIDDEN,
             "Access Denied: You do not have permission to view customers".to_string(),

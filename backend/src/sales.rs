@@ -47,7 +47,7 @@ async fn create_sales_order(
 ) -> Result<Json<OrderResponse>, (StatusCode, String)> {
     
     // 1. RBAC: Only admins and sales reps can create orders
-    if claims.role != "admin" && claims.role != "sales_rep" {
+    if claims.role != "admin" && !claims.role.contains("sales") {
         return Err((StatusCode::FORBIDDEN, "Access Denied: Only sales reps can create orders".to_string()));
     }
 

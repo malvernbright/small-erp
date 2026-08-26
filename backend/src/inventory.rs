@@ -69,7 +69,7 @@ async fn create_product(
 ) -> Result<Json<Product>, (StatusCode, String)> {
     
     // RBAC: Only admins and warehouse managers can create products
-    if claims.role != "admin" && claims.role != "warehouse_mgr" {
+    if claims.role != "admin" && !claims.role.contains("inventory") {
         return Err((StatusCode::FORBIDDEN, "Access Denied: Cannot create products".to_string()));
     }
 
